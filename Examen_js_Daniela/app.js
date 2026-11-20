@@ -27,6 +27,8 @@ class TodoApp extends HTMLElement {
  
       this.shadowRoot.appendChild(plantilla.content.cloneNode(true));
       this.setup();
+      this.renderCategoriasSelects();
+      this.renderCategoriasModal();
     } catch (error) {
       console.error("Error al inicializar el componente de tareas:", error);
       this.shadowRoot.innerHTML = `<div style="padding: 20px; color: red;">Error crítico de interfaz: ${error.message}</div>`;
@@ -59,13 +61,14 @@ class TodoApp extends HTMLElement {
       s.getElementById('frm-cat').reset();
       this.renderCategoriasModal();
       s.getElementById('mdl-cat').showModal();
+      this.renderCategoriasSelects();
     };
   s.getElementById('frm-cat').onsubmit = (e)=> {
       e.preventDefault();
-      const nombreInput = s.getElementById('cat-nombre').value.trim().toLowerCase();
+      const nombreInput = s.getElementById('cat-nombre').value.trim();
       if (!nombreInput) return; 
       if (this.editandoCatId){
-        this.categorias = this.categorias.map( c => c.id === this.editandoCatId ? {...c, nombre:nombreInput, id: nombreInput }: c);
+        this.categorias = this.categorias.map( c => c.id === this.editandoCatId ? {...c, nombre:nombreInput}: c);
         this.editandoCatId = null;
       } else{
         if (!this.categorias.some(c => c.id === nombreInput)){
@@ -75,33 +78,55 @@ class TodoApp extends HTMLElement {
     s.getElementById('frm-cat').reset();
     this.guardarCategorias();
     };
-    s.getElementById('cat-lst').onclick = (e) =>{
-      const id = e.target.dataset.id;
-      if(!id) return;
-      if (e.target.classList.contains('del-cat')){
-        if (confirm('¿Eliminar la categoría?')){
-          this.categorias = this.categorias.filter(c => c.id !==id);
-          this.guardarCategorias();
+    s.getElementById('cat-lst').onclick = (e) => {
+    const id = e.target.dataset.id;
+    if (!id) return;
+
+    if (e.target.classList.contains('del-cat')) {
+
+        if (confirm('¿Eliminar la categoría?')) {
+
+            const usada = this.tareas.some(
+                t => t.categoria === id
+            );
+
+            if (usada) {
+                alert('No puedes eliminar una categoría asociada a tareas');
+                return;
+            }
+
+            this.categorias = this.categorias.filter(
+                c => c.id !== id
+            );
+
+            this.guardarCategorias();
         }
-      } else if (e.target.classList.contains('edi-cat')){
-        const cat = this.categorias.find( c => c.id === id);
-          if (cat) {
-            {
+
+    } else if (e.target.classList.contains('edi-cat')) {
+
+        const cat = this.categorias.find(
+            c => c.id === id
+        );
+
+        if (cat) {
             this.editandoCatId = cat.id;
             s.getElementById('cat-nombre').value = cat.nombre;
-          }
         }
-      };
-    this.renderCategoriasSelects();
+    }
+};
+
+this.renderCategoriasSelects();
   
     s.getElementById('frm').onsubmit = (e) => {
       e.preventDefault();
-      const titulo = s.getElementById('ttl').value, completado = s.getElementById('cmp').checked, fecha = s.getElementById('fch').value;
+      const titulo = s.getElementById('ttl').value,
+            completado = s.getElementById('cmp').checked, 
+            fecha = s.getElementById('fch').value;
       const categoria = s.getElementById('cat').value;
       if (this.editandoId) {
-        this.tareas = this.tareas.map(t => t.id === this.editandoId ? { ...t, titulo, completado, fecha } : t);
+        this.tareas = this.tareas.map(t => t.id === this.editandoId ? { ...t, titulo, completado, fecha, categoria } : t);
       } else {
-        this.tareas.push({ id: 'm_' + Date.now(), titulo, completado, fecha, importada: false });
+        this.tareas.push({ id: 'n_' + Date.now(), titulo, completado, fecha, categoria, importada: false });
       }
       s.getElementById('mdl-f').close();
       this.guardar();
@@ -117,6 +142,7 @@ class TodoApp extends HTMLElement {
         s.getElementById('ttl').value = t.titulo;
         s.getElementById('cmp').checked = t.completado;
         s.getElementById('fch').value = t.fecha || new Date().toISOString().split('T')[0];
+        s.getElementById('cat').value = t.categoria || 'general'; 
         s.getElementById('mdl-f').showModal();
       }
     };
@@ -131,9 +157,8 @@ class TodoApp extends HTMLElement {
  
     this.render();
   }
-}
-  async cargarAPI() {
-    const s = this.shadowRoot, ul = s.getElementById('api-lst');
+  async cargarAPI() {  
+     const s = this.shadowRoot, ul = s.getElementById('api-lst');
     ul.innerHTML = 'Cargando...';
     s.getElementById('mdl-i').showModal();
     try {
@@ -152,12 +177,11 @@ class TodoApp extends HTMLElement {
       ul.innerHTML = '<span style="color:red">Error al cargar datos de la API</span>';
     }
   }
- 
   confirmarImportar() {
     const fechaHoy = new Date().toISOString().split('T')[0];
     this.shadowRoot.querySelectorAll('.api-chk:checked').forEach(c => {
       const idRand = 'a_' + Date.now() + '_' + Math.random().toString(36).substr(2, 5);
-      this.tareas.push({ id: idRand, titulo: c.dataset.ttl, completado: !!c.dataset.cmp, fecha: fechaHoy, importada: true });
+      this.tareas.push({ id: idRand, titulo: c.dataset.ttl, completado: !!c.dataset.cmp, fecha: fechaHoy,categoria:'general', importada: true });
     });
     this.shadowRoot.getElementById('mdl-i').close();
     this.guardar();
@@ -223,19 +247,20 @@ class TodoApp extends HTMLElement {
   }
   cargarCategorias(){
     try{
-      const guardadas = JSON.parse(localStorage.getItem(STORAGE_CAT_KEY));
+      const guardadas = JSON.parse(localStorage.getItem(STORAGE_CAT));
       if (guardadas && guardadas.length > 0) return guardadas;
     } catch {}
     return [
-      {id: 'product', nombre: 'product'},
-      {id: 'desing', nombre: 'desing'},
-      {id: 'operations', nombre: 'operations'},
-      {id: 'research', nombre: 'research'}
+      {id: 'general', nombre:'General'}, 
+      {id: 'product', nombre: 'Product'},
+      {id: 'design', nombre: 'Design'},
+      {id: 'operations', nombre: 'Operations'},
+      {id: 'research', nombre: 'Research'}
     ];
   }
   guardarCategorias(){
     try{
-      localStorage.setItem(STORAGE_CAT_KEY, JSON.stringify(this.categorias));
+      localStorage.setItem(STORAGE_CAT, JSON.stringify(this.categorias));
     } catch (e){
       console.error(e);
     }
@@ -246,7 +271,7 @@ class TodoApp extends HTMLElement {
     const s = this.shadowRoot;
     const selectTask = s.getElementById('cat');
     const selectApi = s.getElementById('api-cat');
-    if (selectTask) return;
+    if (!selectTask) return;
     const optionsHTML = this.categorias.map(c => `<option value ="${c.id}">${c.nombre}</option>`).join('');
     selectTask.innerHTML =optionsHTML;
     if (selectApi) selectApi.innerHTML = optionsHTML;
@@ -256,16 +281,16 @@ class TodoApp extends HTMLElement {
     const ul = s.getElementById('cat-lst');
     if (!ul) return;
     if (this.categorias.length === 0){
-      ul.innerHTML ='<li style="padding: 10px; text-aling: center; color: #777;">No hay categorias disponibles</li>';
+      ul.innerHTML ='<li style="padding: 10px; text-align: center; color: #777;">No hay categorias disponibles</li>';
       return;
     }
     ul.innerHTML = this.categorias.map(c => `
-      <li style="display: flex; justify.content: space-between; align-items: center; padding: 10px; border-bottom: 1px solid #ececec;">
+      <li style="display: flex; justify-content: space-between; align-items: center; padding: 10px; border-bottom: 1px solid #ececec;">
         <span><strong> ${c.nombre}</strong> </span>
         <div>
           <button type="button" class="btn-import edi-cat" data-id="${c.id}" style="padding: 4px 10px; font-size: 12px; margin-right: 5px;">
             Editar </button>
-          <button type="button" class="btn-import edi-cat" data-id="${c.id}" style="padding: 4px 10px; font-size: 12px color: #cf6d4d; border-color: #cf6d4d;">
+          <button type="button" class="btn-import del-cat" data-id="${c.id}" style="padding: 4px 10px; font-size: 12px color: #cf6d4d; border-color: #cf6d4d;">
             Eliminar </button>
         </div>
       </li>
